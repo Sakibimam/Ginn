@@ -7,13 +7,14 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "pack": "npm run build && evenhub pack app.json dist && mv out.ehpk ginn.ehpk",
+    "pack": "node scripts/pack.mjs",
     "simulate": "evenhub-simulator http://localhost:5173 --automation-port 9898"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.16"
   },
   "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.2.0",
     "typescript": "^5.9.3",
     "vite": "^5.4.21"
   }

@@ -30,6 +30,12 @@ export function clean(s: string) {
     .replace(/[^\x20-\x7E\n·]/g, '')
 }
 
+/** Like fit(), but keeps line breaks (for reading a full message). */
+export function block(s: string, n: number) {
+  const c = clean(s).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  return c.length <= n ? c : c.slice(0, n - 3).trimEnd() + '...'
+}
+
 export function fit(s: string, n: number) {
   const c = clean(s).replace(/\s+/g, ' ').trim()
   return c.length <= n ? c : c.slice(0, n - 3).trimEnd() + '...'

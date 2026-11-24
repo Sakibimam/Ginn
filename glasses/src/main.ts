@@ -16,8 +16,8 @@ export const state = {
   serverOk: false,
 }
 
-const UNDO_SECONDS = 20
-const MAX_LISTEN_SECONDS = 30
+// Defaults until the server tells us its own limits (GINN_UNDO_SECONDS, GINN_MAX_LISTEN_SECONDS).
+const limits = { undo: 20, listen: 45 }
 let bridge: EvenAppBridge
 let pcm: Uint8Array[] = []
 let listenStart = 0
@@ -77,17 +77,21 @@ async function home() {
   state.screen = 'home'
   state.draft = null
   try {
-    const t = await api.today()
+    const [t, h] = await Promise.all([api.today(), api.health()])
     state.today = t
+    limits.undo = h.undoSeconds ?? limits.undo
+    limits.listen = h.maxListenSeconds ?? limits.listen
     state.serverOk = true
   } catch (e) {
     state.serverOk = false
-    state.error = (e as Error).message
+    state.error = e instanceof ApiError && e.status === 401 ? 'not-paired' : (e as Error).message
   }
   const t = state.today
   const body = state.serverOk
     ? `GINN\nTap after a conversation.\nSay who, and what you promised.\n\nToday: ${t.met} met · ${t.sent} sent · ${t.ghosted} ghosted\n${t.ghosted ? 'Swipe up: ' + t.ghosted + ' waiting for you\n' : ''}Swipe down: your next meeting`
-    : `GINN\nCan't reach your Ginn server.\nOpen Ginn on your phone to pair.\n\nTap to try again.`
+    : state.error === 'not-paired'
+      ? `GINN\nNot paired yet.\nOpen Ginn in the Even app on your phone\nand enter the code from your server.\n\nTap to try again.`
+      : `GINN\n${state.error || "Can't reach your Ginn server."}\nCheck the server is running, or pair again\nfrom the Even app on your phone.\n\nTap to try again.`
   await lens.text(body)
   renderPhone()
 }
@@ -97,12 +101,13 @@ async function listen() {
   pcm = []
   listenStart = Date.now()
   await lens.text(listeningText(0))
-  await bridge.audioControl(true)
+  const micOk = await bridge.audioControl(true).catch(() => false)
+  if (micOk === false) return message("The glasses mic didn't start.\nCheck Ginn's microphone permission in the Even app, then tap to try again.", home)
   log('mic on')
   stopTicker()
   ticker = window.setInterval(() => {
     const s = Math.floor((Date.now() - listenStart) / 1000)
-    if (s >= MAX_LISTEN_SECONDS) return void finishListening()
+    if (s >= limits.listen) return void finishListening()
     lens.update(listeningText(s))
   }, 1000)
   renderPhone()
@@ -177,7 +182,7 @@ async function detail(a: Action) {
     items = [...(a.otherCandidates ?? []).map(c => c.contact.name), 'Skip the intro']
   } else {
     const label = a.kind === 'dm' ? `DM to ${who(d)} · ${a.when}` : a.kind === 'intro' ? `Group: you + ${first(who(d))} + ${first(a.other?.name)}` : a.kind === 'meeting' ? `Calendar · ${a.when}` : `Reminder · ${a.when}`
-    head = `${label}\n${lens.fit(a.text, 300)}`
+    head = `${label}\n${lens.block(a.text, 300)}`
     items = [a.approved ? 'Keep it' : 'Turn it on', a.approved ? 'Skip it' : 'Leave it off']
   }
   await lens.list(head, items, 196)
@@ -202,7 +207,7 @@ async function sent() {
   // Timers can be paused when the phone is pocketed, so the undo window is decided by the clock at the moment you tap.
   const draw = (closing = false) => {
     const lines = d.actions.filter(a => a.status !== 'skipped').map(a => '- ' + doneLine(a, d))
-    return `Done. ${first(who(d))} won't be ghosted.\n${lines.join('\n')}\n\n${closing ? 'Tap to close' : `Tap within ${UNDO_SECONDS}s to undo`}`
+    return `Done. ${first(who(d))} won't be ghosted.\n${lines.join('\n')}\n\n${closing ? 'Tap to close' : `Tap within ${limits.undo}s to undo`}`
   }
   await lens.text(draw())
   stopTicker()
@@ -214,7 +219,7 @@ async function sent() {
     }
     if (state.screen === 'sent') await lens.text(draw(true))
     renderPhone()
-  }, UNDO_SECONDS * 1000 + 1500)
+  }, limits.undo * 1000 + 1500)
   renderPhone()
 }
 
@@ -263,7 +268,7 @@ async function onTap() {
       return finishListening()
     case 'sent': {
       const d = state.draft!
-      const live = d.actions.some(a => a.status === 'queued') && Date.now() - sentAt < UNDO_SECONDS * 1000
+      const live = d.actions.some(a => a.status === 'queued') && Date.now() - sentAt < limits.undo * 1000
       stopTicker()
       if (!live) return home()
       await working('Undoing...')

@@ -64,15 +64,20 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** Every request has a deadline, so the lens never hangs on "working". Audio gets longer for transcription. */
+async function call<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
   if (conn.token) headers.authorization = `Bearer ${conn.token}`
   if (init.body && typeof init.body === 'string') headers['content-type'] = 'application/json'
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   let res: Response
   try {
-    res = await fetch(conn.url + path, { ...init, headers })
-  } catch {
-    throw new ApiError(0, "Can't reach your Ginn server")
+    res = await fetch(conn.url + path, { ...init, headers, signal: ctrl.signal })
+  } catch (e) {
+    throw new ApiError(0, (e as Error).name === 'AbortError' ? 'Your Ginn server is taking too long' : "Can't reach your Ginn server")
+  } finally {
+    clearTimeout(timer)
   }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string }
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Server error ${res.status}`)
@@ -82,24 +87,35 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 
 export const api = {
-  health: () => call<{ ok: boolean; parser: string; telegram: { connected: boolean; mock: boolean; me: string | null }; calendar: { connected: boolean } }>('/api/health'),
+  health: () => call<Health>('/api/health', {}, 6000),
   pair: async (url: string, code: string) => {
     setServer(url, '')
     const r = await post<{ token: string }>('/api/pair', { code })
     setServer(url, r.token)
   },
   debriefPcm: (pcm: Uint8Array) =>
-    call<Draft>('/api/debrief/pcm', { method: 'POST', body: pcm as unknown as BodyInit, headers: { 'content-type': 'application/octet-stream' } }),
+    call<Draft>('/api/debrief/pcm', { method: 'POST', body: pcm as unknown as BodyInit, headers: { 'content-type': 'application/octet-stream' } }, 90_000),
+  approve: (id: string) => call<Draft>(`/api/drafts/${id}/approve`, { method: 'POST', body: '{}' }, 45_000),
   debriefText: (text: string, source: 'glasses' | 'phone' | 'text' = 'text') => post<Draft>('/api/debrief/text', { text, source }),
   draft: (id: string) => call<Draft>(`/api/drafts/${id}`),
   pick: (id: string, contactId: string, actionId?: string) => post<Draft>(`/api/drafts/${id}/pick`, { contactId, actionId }),
   toggle: (id: string, actionId: string, approved?: boolean) => post<Draft>(`/api/drafts/${id}/toggle`, { actionId, approved }),
   edit: (id: string, actionId: string, text: string) => post<Draft>(`/api/drafts/${id}/edit`, { actionId, text }),
-  approve: (id: string) => post<Draft>(`/api/drafts/${id}/approve`),
   discard: (id: string) => post<Draft>(`/api/drafts/${id}/discard`),
   undo: (id: string, actionId?: string) => post<Draft>(`/api/drafts/${id}/undo`, { actionId }),
   today: () => call<Today>('/api/today'),
   next: () => call<NextCard | null>('/api/next'),
+}
+
+export interface Health {
+  ok: boolean
+  parser: string
+  telegram: { connected: boolean; mock: boolean; me?: string | null }
+  calendar: { connected: boolean; configured: boolean }
+  undoSeconds: number
+  maxListenSeconds: number
+  setupNeeded: boolean
+  paired: boolean
 }
 
 export interface NextCard {
