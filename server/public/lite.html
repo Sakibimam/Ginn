@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ginn Lite</title>
+<style>
+  :root { color-scheme: dark; --bg:#121212; --card:#1e1e1e; --line:#323232; --text:#eee; --dim:#9a9a9a; --g:#3CFA44; --bad:#ff453a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:20px 16px 48px; display:flex; flex-direction:column; gap:14px; }
+  h1 { margin:0; font-size:32px; letter-spacing:-0.03em; } h1 span { color:var(--g); }
+  .lead { margin:-6px 0 0; color:var(--dim); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .mic { width:132px; height:132px; border-radius:50%; border:2px solid var(--g); background:transparent; color:var(--g); font:700 17px system-ui; align-self:center; margin:8px 0; cursor:pointer; }
+  .mic.rec { background:var(--g); color:#0b0b0b; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 14px rgba(60,250,68,.12); } }
+  .example { color:var(--dim); font-style:italic; text-align:center; margin:0; }
+  textarea, input { background:#161616; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; width:100%; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--dim); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button, .btn { background:var(--g); color:#0b0b0b; border:0; border-radius:10px; padding:12px; font:600 15px system-ui; cursor:pointer; text-decoration:none; text-align:center; display:block; }
+  .ghost { background:transparent !important; color:var(--text) !important; border:1px solid var(--line) !important; }
+  .act { border-top:1px solid var(--line); padding-top:10px; display:flex; flex-direction:column; gap:8px; }
+  .act h3 { margin:0; font-size:15px; display:flex; justify-content:space-between; } .act h3 small { color:var(--dim); font-weight:400; }
+  .act p { margin:0; white-space:pre-wrap; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .quote { color:var(--dim); font-style:italic; margin:0; }
+  .err { color:var(--bad); margin:0; } .dim { color:var(--dim); font-size:13px; margin:0; }
+  details summary { color:var(--dim); cursor:pointer; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ginn<span>.</span></h1>
+  <p class="lead">Just met someone? Say one line. Get your follow-ups ready to send, so nobody gets ghosted.</p>
+
+  <section class="card">
+    <button class="mic" id="mic">Hold to talk</button>
+    <p class="example">"Alex, Hyperliquid. Wants the listing deck. Intro him to Omar. Call next Tuesday."</p>
+    <details><summary>Or type it</summary>
+      <textarea id="typed" rows="3" placeholder="Who you met, then what you promised"></textarea>
+      <button id="typedBtn" style="margin-top:8px">Get my follow-ups</button>
+    </details>
+    <p class="err hidden" id="err"></p>
+  </section>
+
+  <section class="card hidden" id="result"></section>
+
+  <details class="card"><summary>About you (makes the messages sound like you)</summary>
+    <div class="grid">
+      <label>Your name<input id="name"></label>
+      <label>Your company<input id="company"></label>
+    </div>
+    <label>Where are you today?<input id="event" placeholder="Token2049, Daos Hub..."></label>
+  </details>
+
+  <p class="dim">Ginn Lite never logs into your accounts and never sends anything. You press send. We keep a count of uses, not what you say.</p>
+</main>
+<script>
+const $ = id => document.getElementById(id)
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c])
+const store = { get: k => { try { return localStorage.getItem(k) || '' } catch { return '' } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } }
+let anon = store.get('ginn.anon'); if (!anon) { anon = Math.random().toString(36).slice(2, 12); store.set('ginn.anon', anon) }
+for (const k of ['name', 'company', 'event']) { $(k).value = store.get('ginn.' + k); $(k).oninput = () => store.set('ginn.' + k, $(k).value) }
+
+function query() {
+  const q = new URLSearchParams({ name: $('name').value, company: $('company').value, event: $('event').value, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  return q
+}
+function showErr(m) { $('err').textContent = m; $('err').classList.toggle('hidden', !m) }
+
+async function send(body, ext) {
+  showErr('')
+  $('result').classList.remove('hidden')
+  $('result').innerHTML = '<p class="dim">Ginn is on it...</p>'
+  const q = query(); if (ext) q.set('ext', ext)
+  try {
+    const r = await fetch('/api/lite/debrief?' + q, {
+      method: 'POST',
+      headers: { 'x-ginn-anon': anon, ...(typeof body === 'string' ? { 'content-type': 'application/json' } : { 'content-type': 'application/octet-stream' }) },
+      body,
+    })
+    const d = await r.json()
+    if (!r.ok) throw new Error(d.error || 'Something went wrong')
+    render(d)
+  } catch (e) { $('result').classList.add('hidden'); showErr(e.message) }
+}
+
+const label = { dm: 'Message', intro: 'Intro', meeting: 'Calendar', reminder: 'Reminder' }
+function render(d) {
+  $('result').innerHTML = `<h3 style="margin:0">${esc(d.person || 'Your follow-ups')}${d.company ? ` <small style="color:var(--dim);font-weight:400">${esc(d.company)}</small>` : ''}</h3>
+    <p class="quote">“${esc(d.transcript)}”</p>` +
+    d.actions.map((a, i) => `<div class="act">
+      <h3>${label[a.kind]}${a.otherName ? ' · ' + esc(a.otherName) : ''}<small>${esc(a.when)}</small></h3>
+      <p id="t${i}">${esc(a.text)}</p>
+      <div class="row">
+        ${a.share ? `<a class="btn" data-share href="${esc(a.share)}" target="_blank" rel="noopener">Send in Telegram</a>` : ''}
+        ${a.ics ? `<a class="btn" data-share href="${esc(a.ics)}" download="ginn-${i}.ics">Add to calendar</a>` : ''}
+        <button class="ghost" data-copy="${i}">Copy</button>
+      </div></div>`).join('') +
+    `<p class="dim">Want Ginn to send these for you, on schedule, in the right chat? That's Ginn Pro on Telegram and G2 glasses.</p>`
+}
+
+$('result').addEventListener('click', async e => {
+  const c = e.target.closest('[data-copy]')
+  if (c) { try { await navigator.clipboard.writeText($('t' + c.dataset.copy).textContent); c.textContent = 'Copied' } catch { c.textContent = 'Select and copy' } }
+  if (e.target.closest('[data-share]') || c) fetch('/api/lite/share', { method: 'POST', headers: { 'x-ginn-anon': anon } }).catch(() => {})
+})
+
+$('typedBtn').onclick = () => { const t = $('typed').value.trim(); if (t) send(JSON.stringify({ text: t })) }
+
+// Hold-to-talk with MediaRecorder; tap toggles on devices where hold is awkward.
+let rec = null, chunks = []
+async function start() {
+  if (rec) return
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const type = ['audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || ''
+    rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined)
+    chunks = []
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data)
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(chunks, { type: rec.mimeType })
+      const ext = rec.mimeType.includes('mp4') ? 'mp4' : rec.mimeType.includes('ogg') ? 'ogg' : 'webm'
+      rec = null
+      $('mic').classList.remove('rec'); $('mic').textContent = 'Hold to talk'
+      if (blob.size < 2000) return showErr("Didn't catch that. Hold the button while you talk.")
+      send(await blob.arrayBuffer(), ext)
+    }
+    rec.start()
+    $('mic').classList.add('rec'); $('mic').textContent = 'Listening...'
+  } catch { showErr('Microphone blocked. Allow it, or type instead.') }
+}
+function stop() { if (rec && rec.state === 'recording') rec.stop() }
+$('mic').addEventListener('pointerdown', e => { e.preventDefault(); start() })
+$('mic').addEventListener('pointerup', stop)
+$('mic').addEventListener('pointerleave', stop)
+</script>
+</body>
+</html>

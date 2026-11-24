@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ginn setup</title>
+<style>
+  :root { color-scheme: dark; --bg:#141414; --card:#1f1f1f; --line:#333; --text:#ededed; --dim:#999; --g:#3CFA44; --warn:#ffb020; --bad:#ff453a; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 60px; display:flex; flex-direction:column; gap:14px; }
+  h1 { margin:0; font-size:30px; letter-spacing:-0.03em; } h1 span { color:var(--g); }
+  .sub { color:var(--dim); margin:-8px 0 0; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  h2 { margin:0; font-size:16px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .pill { font-size:11px; padding:3px 9px; border-radius:99px; border:1px solid var(--line); color:var(--dim); text-transform:uppercase; letter-spacing:.05em; font-weight:500; }
+  .pill.ok { color:var(--g); border-color:var(--g); } .pill.warn { color:var(--warn); border-color:#6b5310; }
+  p { margin:0; color:var(--dim); }
+  input, textarea, select { background:#151515; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; width:100%; box-sizing:border-box; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--dim); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } @media (max-width:520px) { .grid { grid-template-columns:1fr; } }
+  button, .btn { background:var(--g); color:#0b0b0b; border:0; border-radius:10px; padding:11px 14px; font:600 15px system-ui; cursor:pointer; text-decoration:none; text-align:center; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  .code { font:700 34px ui-monospace,Menlo,monospace; letter-spacing:.15em; color:var(--g); }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .msg { font-size:13px; } .msg.err { color:var(--bad); } .msg.ok { color:var(--g); }
+  .item { border-top:1px solid var(--line); padding-top:8px; font-size:14px; } .item b { color:var(--text); } .item small { color:var(--dim); display:block; }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; text-align:center; } .stats b { display:block; font-size:24px; color:var(--text); } .stats small { color:var(--dim); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ginn<span>.</span></h1>
+  <p class="sub">Your server. Nobody you meet gets ghosted.</p>
+
+  <section id="pairBox">
+    <h2>Pair your glasses app</h2>
+    <p>In the Even app, open Ginn, enter this server's address and the code below.</p>
+    <div class="code" id="code">------</div>
+    <p id="pairNote">Only shown on this computer. A new code appears each time the server starts.</p>
+  </section>
+
+  <section>
+    <h2>Telegram <span class="pill" id="tgPill">...</span></h2>
+    <p id="tgText">...</p>
+    <div id="tgLogin" class="hidden">
+      <div class="row"><input id="phone" placeholder="+971 50 123 4567" autocomplete="tel"><button id="tgStart">Send code</button></div>
+      <div class="row hidden" id="codeRow"><input id="tgCode" placeholder="Code from Telegram" inputmode="numeric"><button id="tgCodeBtn">Log in</button></div>
+      <div class="row hidden" id="pwRow"><input id="tgPw" type="password" placeholder="Your Telegram 2-step password"><button id="tgPwBtn">Continue</button></div>
+      <p class="msg" id="tgMsg"></p>
+      <p>Use a secondary account for demos. Ginn only reads your contact names (to match who you met) and sends what you approve. Nothing from Telegram goes to an AI.</p>
+    </div>
+    <button class="ghost hidden" id="tgLogout">Log out of Telegram</button>
+  </section>
+
+  <section>
+    <h2>Google Calendar <span class="pill" id="gPill">...</span></h2>
+    <p id="gText">...</p>
+    <a class="btn hidden" id="gConnect" href="/auth/google/start">Connect Google Calendar</a>
+    <button class="ghost hidden" id="gDisconnect">Disconnect</button>
+  </section>
+
+  <section>
+    <h2>You</h2>
+    <div class="grid">
+      <label>Your name<input id="myName"></label>
+      <label>Your company<input id="myCompany"></label>
+      <label>Where you are today<input id="defaultEvent" placeholder="Daos Hub"></label>
+      <label>Time zone<input id="timezone"></label>
+      <label>Send follow-ups<select id="dmTiming"><option value="now">Right after you approve (20 s undo)</option><option value="morning">Next morning at 10:00</option></select></label>
+    </div>
+    <label>Things you often promise, one per line: <code>listing deck = https://...</code><textarea id="snippets" rows="3" placeholder="listing deck = https://example.com/deck"></textarea></label>
+    <button id="saveSettings">Save</button><p class="msg" id="setMsg"></p>
+  </section>
+
+  <section>
+    <h2>Today</h2>
+    <div class="stats"><div><b id="sMet">0</b><small>met</small></div><div><b id="sSent">0</b><small>sent</small></div><div><b id="sGhost">0</b><small>ghosted</small></div><div><b id="sLite">0</b><small>Lite users</small></div></div>
+    <div id="todayList"></div>
+  </section>
+
+  <section id="outboxBox" class="hidden">
+    <h2>Demo outbox <span class="pill warn">mock Telegram</span></h2>
+    <p>No Telegram keys yet, so this is what would have been sent.</p>
+    <div id="outbox"></div>
+  </section>
+
+  <section>
+    <h2>Ginn Lite</h2>
+    <p>Anyone can try Ginn on their phone without logging in: <a href="/lite" style="color:var(--g)">/lite</a>. They press send themselves.</p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id)
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c])
+async function j(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', ...(opts.headers || {}) } })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error || r.statusText)
+  return d
+}
+const post = (p, b) => j(p, { method: 'POST', body: JSON.stringify(b || {}) })
+let settingsLoaded = false
+
+async function load() {
+  const h = await j('/api/health')
+  if (h.pairingCode) $('code').textContent = h.pairingCode
+  else { $('code').textContent = 'on server'; $('pairNote').textContent = 'The code is printed in the server terminal.' }
+
+  const tg = h.telegram
+  $('tgPill').textContent = tg.mock ? 'demo mode' : tg.connected ? 'connected' : 'log in'
+  $('tgPill').className = 'pill ' + (tg.connected ? 'ok' : 'warn')
+  $('tgText').textContent = tg.mock
+    ? 'Running on a mock Telegram. Add TG_API_ID and TG_API_HASH (from my.telegram.org) to server/.env and restart to use your account.'
+    : tg.connected ? `Logged in as ${tg.me}.` : 'Log in with your phone number. The code arrives in your Telegram app.'
+  $('tgLogin').classList.toggle('hidden', tg.mock || tg.connected)
+  $('tgLogout').classList.toggle('hidden', !tg.connected || tg.mock)
+  $('outboxBox').classList.toggle('hidden', !tg.mock)
+
+  const g = h.calendar
+  $('gPill').textContent = g.connected ? 'connected' : g.configured ? 'not connected' : 'not set up'
+  $('gPill').className = 'pill ' + (g.connected ? 'ok' : 'warn')
+  $('gText').textContent = g.connected ? 'Calls and meetings you promise become calendar events.'
+    : g.configured ? 'Connect once. Ginn only creates events you approve.'
+    : 'Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to server/.env. Until then, meetings become Telegram reminders.'
+  $('gConnect').classList.toggle('hidden', !g.configured || g.connected)
+  $('gDisconnect').classList.toggle('hidden', !g.connected)
+
+  if (!settingsLoaded) {
+    const s = await j('/api/settings')
+    for (const k of ['myName','myCompany','defaultEvent','timezone','dmTiming']) $(k).value = s[k] ?? ''
+    $('snippets').value = Object.entries(s.snippets || {}).map(([k, v]) => `${k} = ${v}`).join('\n')
+    settingsLoaded = true
+  }
+
+  const t = await j('/api/today')
+  $('sMet').textContent = t.met; $('sSent').textContent = t.sent; $('sGhost').textContent = t.ghosted
+  $('todayList').innerHTML = t.drafts.map(d => `<div class="item"><b>${esc(d.contact?.name || d.person.spokenName)}</b> · ${esc(d.status)}
+    <small>“${esc(d.transcript)}”</small>${d.actions.map(a => `<small>${esc(a.kind)} · ${esc(a.status)} · ${esc(a.when)}${a.error ? ' · ' + esc(a.error) : ''}</small>`).join('')}</div>`).join('') || '<p>No debriefs yet today.</p>'
+  const lite = await j('/api/lite/stats'); $('sLite').textContent = lite.users
+  if (tg.mock) {
+    const ob = await j('/api/outbox')
+    $('outbox').innerHTML = ob.map(o => `<div class="item"><b>${esc(o.to)}</b><small>${esc(o.kind)} · ${new Date(o.at).toLocaleTimeString()}</small>${esc(o.text)}</div>`).join('') || '<p>Nothing sent yet.</p>'
+  }
+}
+
+function msg(id, text, ok) { $(id).textContent = text; $(id).className = 'msg ' + (ok ? 'ok' : 'err') }
+
+$('tgStart').onclick = async () => {
+  try { await post('/api/tg/start', { phone: $('phone').value.trim() }); $('codeRow').classList.remove('hidden'); msg('tgMsg', 'Code sent to your Telegram app.', true) }
+  catch (e) { msg('tgMsg', e.message) }
+}
+$('tgCodeBtn').onclick = async () => {
+  try {
+    const r = await post('/api/tg/code', { code: $('tgCode').value.trim() })
+    if (r.result === 'password') { $('pwRow').classList.remove('hidden'); msg('tgMsg', 'Your account has a 2-step password.', true) }
+    else { msg('tgMsg', 'Logged in.', true); load() }
+  } catch (e) { msg('tgMsg', e.message) }
+}
+$('tgPwBtn').onclick = async () => {
+  try { await post('/api/tg/password', { password: $('tgPw').value }); $('tgPw').value = ''; msg('tgMsg', 'Logged in.', true); load() }
+  catch (e) { msg('tgMsg', e.message) }
+}
+$('tgLogout').onclick = async () => { await post('/api/tg/logout'); load() }
+$('gDisconnect').onclick = async () => { await post('/api/google/disconnect'); load() }
+$('saveSettings').onclick = async () => {
+  const snippets = {}
+  for (const line of $('snippets').value.split('\n')) { const i = line.indexOf('='); if (i > 0) snippets[line.slice(0, i).trim()] = line.slice(i + 1).trim() }
+  try {
+    await j('/api/settings', { method: 'PUT', body: JSON.stringify({ myName: $('myName').value, myCompany: $('myCompany').value, defaultEvent: $('defaultEvent').value, timezone: $('timezone').value, dmTiming: $('dmTiming').value, snippets }) })
+    msg('setMsg', 'Saved.', true)
+  } catch (e) { msg('setMsg', e.message) }
+}
+load().catch(e => document.querySelector('.sub').textContent = e.message)
+setInterval(() => load().catch(() => {}), 10000)
+</script>
+</body>
+</html>
