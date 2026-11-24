@@ -60,4 +60,12 @@ export interface Settings {
   autoSelf: boolean
   /** Phrases you often promise, with the link to send. e.g. "listing deck" -> https://... */
   snippets: Record<string, string>
+  /** Hour used when you name a day but no time ("call Tuesday"). */
+  meetingHour: number
+  /** Length of calendar events Ginn creates. */
+  meetingMinutes: number
+  /** Without a calendar, the Telegram reminder fires this many minutes before. */
+  reminderLeadMinutes: number
+  /** Intro group name. {me} = your company, {them} = their company or first name. */
+  groupTitle: string
 }

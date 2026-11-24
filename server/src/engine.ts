@@ -25,9 +25,52 @@ export async function initChannel() {
   try {
     const ok = await telegram.init()
     console.log(ok ? `[telegram] logged in as ${await telegram.me()}` : '[telegram] not logged in yet: open the setup page')
+    if (ok) warmContacts()
   } catch (e) {
     console.error('[telegram] connect failed:', (e as Error).message)
   }
+}
+
+/** Load contacts in the background so the first debrief isn't slow. */
+export function warmContacts() {
+  channel.contacts().catch(e => console.warn('[contacts] warm-up failed:', (e as Error).message))
+}
+
+/** Intros held for the undo window are lost if the server restarts: finish them on boot. */
+export function recover() {
+  let n = 0
+  for (const d of db.drafts.slice(0, 200))
+    for (const a of d.actions)
+      if (a.kind === 'intro' && a.status === 'queued' && !a.refs?.chatId && d.contact && a.other) {
+        scheduleIntro(d, a, Math.max(0, new Date(a.at ?? 0).getTime() - Date.now()))
+        n++
+      }
+  if (n) console.log(`[engine] resumed ${n} intro(s) that were waiting when the server stopped`)
+}
+
+function groupTitle(d: Draft) {
+  const s = db.settings
+  const them = d.person.company ?? d.contact?.name.split(/[ |]/)[0] ?? 'Intro'
+  const me = s.myCompany || s.myName || 'Me'
+  return (s.groupTitle || '{me} <> {them}').replace('{me}', me).replace('{them}', them).slice(0, 128)
+}
+
+function scheduleIntro(d: Draft, a: PlannedAction, delayMs: number) {
+  const contact = d.contact!
+  const other = a.other!
+  delayed.set(
+    a.id,
+    setTimeout(async () => {
+      delayed.delete(a.id)
+      try {
+        const r = await channel.createGroup(groupTitle(d), [contact, other], a.text)
+        Object.assign(a, { status: 'sent', detail: r.detail, link: r.link, refs: r.refs })
+      } catch (e) {
+        Object.assign(a, { status: 'failed', error: (e as Error).message })
+      }
+      save()
+    }, delayMs),
+  )
 }
 
 export const getChannel = () => channel
@@ -66,6 +109,7 @@ function respell(text: string, spoken: string, contactName: string) {
 export async function createDraft(transcript: string, source: Draft['source']): Promise<Draft> {
   const s = db.settings
   const parsed = await parseDebrief(transcript, s)
+  if (!parsed.personName) throw new HttpError(422, `Who did you meet? Start with their name. (Heard: "${transcript.slice(0, 80)}")`)
   const contacts = await channel.contacts()
   const m = matchContact(parsed.personName, parsed.company, contacts)
 
@@ -114,8 +158,15 @@ export function getDraft(draftId: string) {
   return d
 }
 
-export async function pick(draftId: string, contactId: string, actionId?: string) {
+/** Only drafts that haven't been sent or thrown away can change. */
+function openDraft(draftId: string) {
   const d = getDraft(draftId)
+  if (d.status === 'done' || d.status === 'discarded') throw new HttpError(409, d.status === 'done' ? 'Already sent' : 'Already discarded')
+  return d
+}
+
+export async function pick(draftId: string, contactId: string, actionId?: string) {
+  const d = openDraft(draftId)
   const contacts = await channel.contacts()
   const c = contacts.find(x => x.id === contactId) ?? [...d.candidates, ...d.actions.flatMap(a => a.otherCandidates ?? [])].map(x => x.contact).find(x => x.id === contactId)
   if (!c) throw new HttpError(400, 'Unknown contact')
@@ -141,7 +192,7 @@ export async function searchContacts(q: string) {
 }
 
 export function toggle(draftId: string, actionId: string, approved?: boolean) {
-  const d = getDraft(draftId)
+  const d = openDraft(draftId)
   const a = d.actions.find(x => x.id === actionId)
   if (!a) throw new HttpError(404, 'Action not found')
   a.approved = approved ?? !a.approved
@@ -150,7 +201,7 @@ export function toggle(draftId: string, actionId: string, approved?: boolean) {
 }
 
 export function editAction(draftId: string, actionId: string, text: string) {
-  const d = getDraft(draftId)
+  const d = openDraft(draftId)
   const a = d.actions.find(x => x.id === actionId)
   if (!a || a.status !== 'pending') throw new HttpError(400, 'Cannot edit this action')
   a.text = text.slice(0, 1000)
@@ -159,18 +210,30 @@ export function editAction(draftId: string, actionId: string, text: string) {
 }
 
 export function discard(draftId: string) {
-  const d = getDraft(draftId)
+  const d = openDraft(draftId)
   d.status = 'discarded'
   save()
   return d
 }
 
 const delayed = new Map<string, NodeJS.Timeout>()
+const approving = new Set<string>()
 
 /** Runs every approved action. Messages wait `undoSeconds` in Telegram's scheduled queue so you can undo. */
 export async function approve(draftId: string) {
   const d = getDraft(draftId)
-  if (d.status === 'done') return d
+  if (d.status === 'done' || d.status === 'discarded') return d
+  // The glasses and the phone can both tap "send": never run a draft twice.
+  if (approving.has(draftId)) throw new HttpError(409, 'Already sending')
+  approving.add(draftId)
+  try {
+    return await runApproved(d)
+  } finally {
+    approving.delete(draftId)
+  }
+}
+
+async function runApproved(d: Draft) {
   if (!d.contact && d.actions.some(a => a.approved && (a.kind === 'dm' || a.kind === 'intro')))
     throw new HttpError(409, 'Pick who you met first')
   const undoAt = () => new Date(Date.now() + config.undoSeconds * 1000)
@@ -194,33 +257,18 @@ export async function approve(draftId: string) {
         if (!a.other) throw new Error(`Couldn't find ${a.otherName ?? 'the other person'} in your contacts`)
         // Groups can't be scheduled, so hold them on the server for the undo window.
         a.status = 'queued'
-        a.detail = 'creating group…'
-        const contact = d.contact!
-        const other = a.other
-        const title = `${db.settings.myCompany} <> ${d.person.company ?? contact.name.split(/[ |]/)[0]}`
-        delayed.set(
-          a.id,
-          setTimeout(async () => {
-            delayed.delete(a.id)
-            try {
-              const r = await channel.createGroup(title, [contact, other], a.text)
-              Object.assign(a, { status: 'sent', detail: r.detail, link: r.link, refs: r.refs })
-            } catch (e) {
-              Object.assign(a, { status: 'failed', error: (e as Error).message })
-            }
-            save()
-          }, config.undoSeconds * 1000),
-        )
+        a.detail = 'creating group'
         a.at = undoAt().toISOString()
+        scheduleIntro(d, a, config.undoSeconds * 1000)
       } else if (a.kind === 'meeting') {
         const start = a.at ? new Date(a.at) : new Date(morning())
         const desc = `Promised in person. Debrief: "${d.transcript}"`
         if (calendar.connected()) {
-          const ev = await calendar.createEvent(a.text, start, 30, db.settings.timezone, desc)
+          const ev = await calendar.createEvent(a.text, start, db.settings.meetingMinutes, db.settings.timezone, desc)
           Object.assign(a, { status: 'sent', detail: 'Google Calendar', link: ev.link, refs: { eventId: ev.id } })
         } else {
-          // No calendar connected: a Telegram reminder 15 minutes before.
-          const at = new Date(Math.max(start.getTime() - 15 * 60_000, undoAt().getTime()))
+          // No calendar connected: a Telegram reminder shortly before.
+          const at = new Date(Math.max(start.getTime() - db.settings.reminderLeadMinutes * 60_000, undoAt().getTime()))
           const r = await channel.send('self', `Ginn: ${a.text} at ${whenLabel(start.toISOString())}`, at)
           Object.assign(a, { status: 'queued', detail: 'reminder in Saved Messages (connect Google Calendar for events)', refs: r.refs })
         }

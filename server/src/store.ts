@@ -14,15 +14,22 @@ interface Db {
 
 const FILE = path.join(DATA_DIR, 'db.json')
 
-const defaultSettings: Settings = {
-  myName: process.env.GINN_MY_NAME ?? 'Sakib',
-  myCompany: process.env.GINN_MY_COMPANY ?? 'RocketX',
+export const defaultSettings: Settings = {
+  myName: process.env.GINN_MY_NAME ?? '',
+  myCompany: process.env.GINN_MY_COMPANY ?? '',
   timezone: process.env.GINN_TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-  defaultEvent: process.env.GINN_EVENT ?? 'the event',
+  defaultEvent: process.env.GINN_EVENT ?? '',
   dmTiming: 'now',
   autoSelf: true,
   snippets: {},
+  meetingHour: 11,
+  meetingMinutes: 30,
+  reminderLeadMinutes: 15,
+  groupTitle: '{me} <> {them}',
 }
+
+const MAX_DRAFTS = 2000
+const MAX_OUTBOX = 200
 
 function load(): Db {
   try {
@@ -38,16 +45,38 @@ function load(): Db {
 
 export const db: Db = load()
 
+function write() {
+  if (db.drafts.length > MAX_DRAFTS) db.drafts.length = MAX_DRAFTS
+  if (db.outbox.length > MAX_OUTBOX) db.outbox.length = MAX_OUTBOX
+  // Transcripts and contact names live here: owner-only permissions, atomic replace.
+  fs.writeFileSync(FILE + '.tmp', JSON.stringify(db, null, 2), { mode: 0o600 })
+  fs.renameSync(FILE + '.tmp', FILE)
+  fs.chmodSync(FILE, 0o600)
+}
+
+// Tighten anything created before permissions were enforced.
+try {
+  fs.chmodSync(DATA_DIR, 0o700)
+  for (const f of fs.readdirSync(DATA_DIR)) fs.chmodSync(path.join(DATA_DIR, f), 0o600)
+} catch {
+  /* best effort */
+}
+
 let timer: NodeJS.Timeout | null = null
 export function save() {
   if (timer) return
   timer = setTimeout(() => {
     timer = null
-    fs.writeFileSync(FILE + '.tmp', JSON.stringify(db, null, 2))
-    fs.renameSync(FILE + '.tmp', FILE)
+    try {
+      write()
+    } catch (e) {
+      console.error('[store] save failed:', (e as Error).message)
+    }
   }, 50)
 }
 
 export function saveNow() {
-  fs.writeFileSync(FILE, JSON.stringify(db, null, 2))
+  if (timer) clearTimeout(timer)
+  timer = null
+  write()
 }

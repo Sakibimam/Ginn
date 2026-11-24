@@ -40,7 +40,7 @@ for (const c of cases) {
 const party = parseWithRules('Met Jonas at the Polygon party. He asked for our pitch deck. Coffee next Wednesday morning.', s)
 ok(party.company === null && party.event === 'Polygon party', 'party is the event, not the company', party)
 ok(party.actions.find(a => a.kind === 'meeting')?.when?.endsWith('T10:00') === true, 'morning → 10:00', party.actions)
-ok(party.actions[0].text.includes('Polygon party'), 'DM mentions where you met', party.actions[0].text)
+ok(party.actions[0].text.includes('at the Polygon party'), 'DM mentions where you met', party.actions[0].text)
 const both = parseWithRules('Met Lucas from Arbitrum at the Daos Hub dinner. Wants the grant intro.', s)
 ok(both.company === 'Arbitrum' && both.event === 'Daos Hub dinner', 'from X at Y event → company + event', both)
 const deck = parseWithRules(cases[0].text, s).actions.find(a => a.kind === 'dm')!
@@ -73,6 +73,18 @@ await engine.approve(d2.id)
 await engine.undoAll(d2.id)
 await new Promise(r => setTimeout(r, 1500))
 ok(d2.actions[0].status === 'undone' && !db.outbox.some(o => o.to === 'Sara Kim'), 'undo stops the message')
+// guards: a sent draft can't be edited or sent twice; parallel approves don't double-send
+let blocked = false
+try { engine.toggle(d.id, d.actions[0].id, false) } catch { blocked = true }
+ok(blocked, 'sent draft is locked against edits')
+const d3 = await engine.createDraft('Lucas. Wants our token list.', 'text')
+const before = db.outbox.length
+const results = await Promise.allSettled([engine.approve(d3.id), engine.approve(d3.id)])
+await new Promise(r => setTimeout(r, 1500))
+ok(results.filter(r => r.status === 'rejected').length === 1 && db.outbox.length === before + 1, 'double approve sends once', results.map(r => r.status))
+const noEvent = parseWithRules('Aisha. Wants the deck.', { ...s, defaultEvent: '' })
+ok(noEvent.actions[0].text.startsWith('Great meeting you, Aisha!'), 'no event set → no "at the event"', noEvent.actions[0].text)
+
 const t = engine.today()
 ok(t.met >= 2 && t.ghosted === 0, `today: ${t.met} met · ${t.sent} sent · ${t.ghosted} ghosted`)
 ok(Boolean(engine.before(d.contact!.id)?.upcoming.length), 'before card shows the upcoming call')

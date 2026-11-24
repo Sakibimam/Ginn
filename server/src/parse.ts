@@ -48,7 +48,7 @@ Action kinds:
 - "intro": a message the user posts in a new group with the person and other_person (the name as spoken). Introduce both in two short
   sentences using only facts from the debrief. Under 300 characters.
 - "meeting": a calendar event. text = short title like "Call with Alex (Hyperliquid)". when = local start time.
-  If only a day is given, use 11:00. If no day is given, use the next working day at 11:00.
+  If only a day is given, use the meeting_hour below. If no day is given, use the next working day at meeting_hour.
 - "reminder": something the user must do that is not a message to the person. text = short note to self. when = local time or null.
 
 Rules:
@@ -66,7 +66,8 @@ async function parseWithClaude(transcript: string, s: Settings): Promise<ParsedD
     now_local: now.toFormat("cccc yyyy-LL-dd'T'HH:mm"),
     timezone: s.timezone,
     user: { name: s.myName, company: s.myCompany },
-    default_event: s.defaultEvent,
+    default_event: s.defaultEvent || null,
+    meeting_hour: `${String(s.meetingHour).padStart(2, '0')}:00`,
     snippets: s.snippets,
     debrief: transcript,
   }
@@ -140,7 +141,7 @@ function findPerson(clauses: string[]): { name: string; company: string | null; 
   return { name: any?.[0] ?? '', company: null, rest: clauses.slice(1) }
 }
 
-function localWhen(text: string, s: Settings, defaultHour = 11): string | null {
+function localWhen(text: string, s: Settings, defaultHour = s.meetingHour): string | null {
   const now = DateTime.now().setZone(s.timezone)
   const res = chrono.parse(text, { instant: now.toJSDate(), timezone: now.offset }, { forwardDate: true })[0]
   if (!res) return null
@@ -163,7 +164,7 @@ function localWhen(text: string, s: Settings, defaultHour = 11): string | null {
 function nextWorkday(s: Settings): string {
   let d = DateTime.now().setZone(s.timezone).plus({ days: 1 })
   while (d.weekday > 5) d = d.plus({ days: 1 })
-  return d.set({ hour: 11, minute: 0 }).toFormat("yyyy-LL-dd'T'HH:mm")
+  return d.set({ hour: s.meetingHour, minute: 0 }).toFormat("yyyy-LL-dd'T'HH:mm")
 }
 
 function snippetFor(thing: string, s: Settings): string | null {
@@ -180,6 +181,8 @@ export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
   const company = org.company
   const who = first(name) || 'there'
   const event = org.event ?? s.defaultEvent
+  // "at the Polygon party" but "at Token2049"
+  const at = event ? ` at ${/\b(party|dinner|lunch|breakfast|meetup|booth|side ?event|panel|mixer|happy hour|afterparty|conference|summit|hackathon)$/i.test(event) ? 'the ' : ''}${event}` : ''
   const actions: ParsedAction[] = []
 
   for (const cl of rest) {
@@ -190,7 +193,7 @@ export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
         kind: 'intro',
         otherName: other,
         when: null,
-        text: `Hi both! ${first(other)}, meet ${who}${company ? ` from ${company}` : ''}. ${who}, meet ${first(other)}. We met at ${event} and I think you two should talk. I'll let you take it from here.`,
+        text: `Hi both! ${first(other)}, meet ${who}${company ? ` from ${company}` : ''}. ${who}, meet ${first(other)}. We met${at || ' today'} and I think you two should talk. I'll let you take it from here.`,
       })
     } else if ((m = cl.match(/\bremind me to\s+(.+)/i))) {
       actions.push({ kind: 'reminder', otherName: null, when: localWhen(cl, s, 10), text: m[1].replace(/\s+/g, ' ') })
@@ -209,13 +212,13 @@ export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
         kind: 'dm',
         otherName: null,
         when: null,
-        text: `Great meeting you at ${event}, ${who}! As promised, here's our ${thing}${link ? `: ${link}` : '.'} Happy to walk you through it.`,
+        text: `Great meeting you${at}, ${who}! As promised, here's our ${thing}${link ? `:\n${link}\n` : '. '}Happy to walk you through it.`,
       })
     }
   }
 
   if (!actions.some(a => a.kind === 'dm')) {
-    actions.unshift({ kind: 'dm', otherName: null, when: null, text: `Great meeting you at ${event}, ${who}! Let's keep in touch.` })
+    actions.unshift({ kind: 'dm', otherName: null, when: null, text: `Great meeting you${at}, ${who}! Let's keep in touch.` })
   }
   return { personName: name, company, event: org.event, actions, parser: 'rules' }
 }
