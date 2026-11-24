@@ -1,6 +1,12 @@
 // Turns one spoken debrief into planned follow-ups.
+// Input to the AI is ONLY the wearer's own words plus their own settings. No Telegram data
+// (contacts, messages, names from Telegram) is ever sent to an AI model.
+import Anthropic from '@anthropic-ai/sdk'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { z } from 'zod'
 import * as chrono from 'chrono-node'
 import { DateTime } from 'luxon'
+import { config } from './config.js'
 import type { ActionKind, Settings } from './types.js'
 
 export interface ParsedAction {
@@ -17,6 +23,74 @@ export interface ParsedDebrief {
   event: string | null
   actions: ParsedAction[]
   parser: 'claude' | 'rules'
+}
+
+const Debrief = z.object({
+  person_name: z.string().describe('The person the user just met, as spoken. Empty string if unclear.'),
+  company: z.string().nullable().describe('Their company or project, if said.'),
+  event: z.string().nullable().describe('Where they met, if said.'),
+  actions: z.array(
+    z.object({
+      kind: z.enum(['dm', 'intro', 'meeting', 'reminder']),
+      text: z.string(),
+      other_person: z.string().nullable(),
+      when: z.string().nullable(),
+    }),
+  ),
+})
+
+const SYSTEM = `You are Ginn. The user just finished an in-person conversation and said one short sentence about it.
+Turn it into follow-ups the user will approve with one tap. Return JSON only.
+
+Action kinds:
+- "dm": a Telegram message from the user to the person. First person, warm, specific, under 240 characters, no emojis, no hashtags.
+  Mention what was promised. If a promised item matches one of the user's snippets, include that link. Never invent links, numbers or facts.
+- "intro": a message the user posts in a new group with the person and other_person (the name as spoken). Introduce both in two short
+  sentences using only facts from the debrief. Under 300 characters.
+- "meeting": a calendar event. text = short title like "Call with Alex (Hyperliquid)". when = local start time.
+  If only a day is given, use 11:00. If no day is given, use the next working day at 11:00.
+- "reminder": something the user must do that is not a message to the person. text = short note to self. when = local time or null.
+
+Rules:
+- Always include at least one "dm" so the person is never left hanging, unless the user says not to message them.
+- "when" is local time in the user's timezone, format YYYY-MM-DDTHH:mm, or null. For "dm" use null unless the user names a time.
+- Resolve relative dates ("next Tuesday", "tomorrow") from the current local time given below.
+- Use only what the user said. Do not add actions they did not ask for, except the default "dm".`
+
+let client: Anthropic | null = null
+
+async function parseWithClaude(transcript: string, s: Settings): Promise<ParsedDebrief> {
+  client ??= new Anthropic({ apiKey: config.anthropicKey, timeout: 30_000, maxRetries: 1 })
+  const now = DateTime.now().setZone(s.timezone)
+  const context = {
+    now_local: now.toFormat("cccc yyyy-LL-dd'T'HH:mm"),
+    timezone: s.timezone,
+    user: { name: s.myName, company: s.myCompany },
+    default_event: s.defaultEvent,
+    snippets: s.snippets,
+    debrief: transcript,
+  }
+  const res = await client.messages.parse({
+    model: config.model,
+    max_tokens: 4000,
+    system: SYSTEM,
+    output_config: { effort: 'low', format: zodOutputFormat(Debrief) },
+    messages: [{ role: 'user', content: JSON.stringify(context) }],
+  })
+  if (res.stop_reason === 'refusal' || !res.parsed_output) throw new Error(`Claude returned no plan (${res.stop_reason})`)
+  const out = res.parsed_output
+  return {
+    personName: out.person_name.trim(),
+    company: out.company?.trim() || null,
+    event: out.event?.trim() || null,
+    parser: 'claude',
+    actions: out.actions.map(a => ({
+      kind: a.kind,
+      text: a.text.trim(),
+      otherName: a.other_person?.trim() || null,
+      when: a.when && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(a.when) ? a.when.slice(0, 16) : null,
+    })),
+  }
 }
 
 // ───────────────────────── rules parser (free, offline fallback) ─────────────────────────
@@ -126,5 +200,12 @@ export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
 }
 
 export async function parseDebrief(transcript: string, s: Settings): Promise<ParsedDebrief> {
+  if (config.anthropicKey) {
+    try {
+      return await parseWithClaude(transcript, s)
+    } catch (err) {
+      console.warn('[parse] Claude failed, using rules parser:', (err as Error).message)
+    }
+  }
   return parseWithRules(transcript, s)
 }
