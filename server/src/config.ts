@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const ROOT = path.resolve(here, '..')
 export const DATA_DIR = path.join(ROOT, 'data')
-fs.mkdirSync(DATA_DIR, { recursive: true })
+fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
 
 /** Local secret used to encrypt the Telegram session and Google tokens at rest. */
 function loadSecret(): Buffer {
@@ -32,8 +32,12 @@ export const config = {
 
   // Speech-to-text: local whisper.cpp
   whisperBin: process.env.WHISPER_BIN ?? 'whisper-cli',
-  whisperModel: process.env.WHISPER_MODEL ?? path.join(process.env.HOME ?? '', '.cache/whisper/ggml-small.en.bin'),
+  whisperModel: (process.env.WHISPER_MODEL || '~/.cache/whisper/ggml-small.en.bin').replace(/^~(?=\/)/, process.env.HOME ?? ''),
   ffmpegBin: process.env.FFMPEG_BIN ?? 'ffmpeg',
+  // 'server' keeps the model loaded in a whisper-server child process (fast); 'cli' runs whisper-cli per request.
+  whisperMode: (process.env.WHISPER_MODE ?? 'server') as 'server' | 'cli',
+  whisperServerBin: process.env.WHISPER_SERVER_BIN ?? 'whisper-server',
+  whisperPort: Number(process.env.WHISPER_PORT ?? 8178),
 
   // Telegram (user account). Without these, Ginn runs on a mock Telegram.
   tgApiId: Number(process.env.TG_API_ID ?? 0),
@@ -44,7 +48,22 @@ export const config = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
 
   // Seconds a message waits in Telegram's scheduled queue so you can undo it.
-  undoSeconds: Number(process.env.GINN_UNDO_SECONDS ?? 20),
+  undoSeconds: num(process.env.GINN_UNDO_SECONDS, 20, 1, 300),
+  // Longest debrief the lens records.
+  maxListenSeconds: num(process.env.GINN_MAX_LISTEN_SECONDS, 45, 10, 120),
+
+  // Requests from this machine skip the pairing token (simulator, local browser). Set false behind a local reverse proxy.
+  trustLocal: process.env.GINN_TRUST_LOCAL !== 'false',
+  // Ginn Lite is public: cap how much it can cost you.
+  liteMaxPerHour: num(process.env.GINN_LITE_MAX_PER_HOUR, 200, 0, 100000),
+  litePerIpPerHour: num(process.env.GINN_LITE_PER_IP_PER_HOUR, 20, 1, 1000),
+  // Parallel whisper runs. More than the CPU can take makes every request slow.
+  sttConcurrency: num(process.env.GINN_STT_CONCURRENCY, 2, 1, 8),
+}
+
+function num(v: string | undefined, def: number, min: number, max: number) {
+  const n = Number(v)
+  return Number.isFinite(n) && v !== undefined && v !== '' ? Math.min(max, Math.max(min, n)) : def
 }
 
 export function encrypt(plain: string): string {
