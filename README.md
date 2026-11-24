@@ -82,7 +82,7 @@ and the full flow on the mock (approve → delivered → undo stops it).
 ## What existed before 2026-11-23
 - The glasses scaffold started from Even Realities' official `evenhub-templates/asr` template (Vite config, `index.html`, event-routing pattern).
 - Open-source libraries: Even Hub SDK, GramJS (`telegram`), Hono, Anthropic SDK, zod, chrono-node, luxon, whisper.cpp.
-- Everything else (server, parser, matcher, channels, lens screens, Lite) was written during the hackathon, starting 2026-11-24.
+- Everything else (server, parser, matcher, channels, lens screens, Lite) was written during the hackathon week.
 
 ## Roadmap
 Gmail next (same channel interface as Telegram), then WhatsApp (pre-filled message you tap send on), LinkedIn and X where their APIs allow.
