@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ginn Lite</title>
+<link rel="icon" href="/favicon.svg">
+<meta name="description" content="Just met someone? Say one line, get your follow-ups ready to send.">
 <style>
   :root { color-scheme: dark; --bg:#121212; --card:#1e1e1e; --line:#323232; --text:#eee; --dim:#9a9a9a; --g:#3CFA44; --bad:#ff453a; }
   * { box-sizing:border-box; }
@@ -75,6 +77,7 @@ async function send(body, ext) {
   showErr('')
   $('result').classList.remove('hidden')
   $('result').innerHTML = '<p class="dim">Ginn is on it...</p>'
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   const q = query(); if (ext) q.set('ext', ext)
   try {
     const r = await fetch('/api/lite/debrief?' + q, {
@@ -101,6 +104,7 @@ function render(d) {
         <button class="ghost" data-copy="${i}">Copy</button>
       </div></div>`).join('') +
     `<p class="dim">Want Ginn to send these for you, on schedule, in the right chat? That's Ginn Pro on Telegram and G2 glasses.</p>`
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 $('result').addEventListener('click', async e => {
@@ -110,6 +114,15 @@ $('result').addEventListener('click', async e => {
 })
 
 $('typedBtn').onclick = () => { const t = $('typed').value.trim(); if (t) send(JSON.stringify({ text: t })) }
+
+// /lite?say=... (e.g. from an iPhone Shortcut that dictates the debrief) fills in and runs it once.
+const preset = new URLSearchParams(location.search).get('say')
+if (preset) {
+  history.replaceState(null, '', location.pathname)
+  document.querySelector('details').open = true
+  $('typed').value = preset.slice(0, 1000)
+  send(JSON.stringify({ text: preset.slice(0, 1000) }))
+}
 
 // Hold-to-talk with MediaRecorder; tap toggles on devices where hold is awkward.
 let rec = null, chunks = []

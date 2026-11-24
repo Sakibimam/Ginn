@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ginn setup</title>
+<link rel="icon" href="/favicon.svg">
 <style>
   :root { color-scheme: dark; --bg:#141414; --card:#1f1f1f; --line:#333; --text:#ededed; --dim:#999; --g:#3CFA44; --warn:#ffb020; --bad:#ff453a; }
   body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
@@ -26,6 +27,9 @@
   .item { border-top:1px solid var(--line); padding-top:8px; font-size:14px; } .item b { color:var(--text); } .item small { color:var(--dim); display:block; }
   .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; text-align:center; } .stats b { display:block; font-size:24px; color:var(--text); } .stats small { color:var(--dim); }
   .hidden { display:none; }
+  .banner { border-color:var(--g); background:linear-gradient(180deg, rgba(60,250,68,.08), transparent); }
+  code { background:#151515; padding:1px 5px; border-radius:6px; font-size:12px; }
+  @media (max-width:420px) { .stats { grid-template-columns:repeat(2,1fr); } .row { flex-direction:column; } .code { font-size:28px; } h2 { flex-wrap:wrap; } }
 </style>
 </head>
 <body>
@@ -33,11 +37,16 @@
   <h1>ginn<span>.</span></h1>
   <p class="sub">Your server. Nobody you meet gets ghosted.</p>
 
+  <section id="setupBanner" class="banner hidden">
+    <h2>Start here</h2>
+    <p>Tell Ginn your name and company below so follow-ups sound like you. Then pair the glasses app with the code.</p>
+  </section>
+
   <section id="pairBox">
     <h2>Pair your glasses app</h2>
     <p>In the Even app, open Ginn, enter this server's address and the code below.</p>
     <div class="code" id="code">------</div>
-    <p id="pairNote">Only shown on this computer. A new code appears each time the server starts.</p>
+    <p id="pairNote">Only shown on this computer. Each code works once and expires after 15 minutes.</p>
   </section>
 
   <section>
@@ -67,7 +76,10 @@
       <label>Your company<input id="myCompany"></label>
       <label>Where you are today<input id="defaultEvent" placeholder="Daos Hub"></label>
       <label>Time zone<input id="timezone"></label>
-      <label>Send follow-ups<select id="dmTiming"><option value="now">Right after you approve (20 s undo)</option><option value="morning">Next morning at 10:00</option></select></label>
+      <label>Send follow-ups<select id="dmTiming"><option value="now">Right after you approve (with undo)</option><option value="morning">Next morning at 10:00</option></select></label>
+      <label>Intro group name<input id="groupTitle" placeholder="{me} <> {them}"></label>
+      <label>Meetings with only a day start at<select id="meetingHour"></select></label>
+      <label>Meeting length (minutes)<input id="meetingMinutes" type="number" min="5" max="480" step="5"></label>
     </div>
     <label>Things you often promise, one per line: <code>listing deck = https://...</code><textarea id="snippets" rows="3" placeholder="listing deck = https://example.com/deck"></textarea></label>
     <button id="saveSettings">Save</button><p class="msg" id="setMsg"></p>
@@ -104,6 +116,7 @@ let settingsLoaded = false
 
 async function load() {
   const h = await j('/api/health')
+  $('setupBanner').classList.toggle('hidden', !h.setupNeeded)
   if (h.pairingCode) $('code').textContent = h.pairingCode
   else { $('code').textContent = 'on server'; $('pairNote').textContent = 'The code is printed in the server terminal.' }
 
@@ -128,7 +141,8 @@ async function load() {
 
   if (!settingsLoaded) {
     const s = await j('/api/settings')
-    for (const k of ['myName','myCompany','defaultEvent','timezone','dmTiming']) $(k).value = s[k] ?? ''
+    for (let h = 0; h < 24; h++) $('meetingHour').insertAdjacentHTML('beforeend', `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`)
+    for (const k of ['myName','myCompany','defaultEvent','timezone','dmTiming','groupTitle','meetingHour','meetingMinutes']) $(k).value = s[k] ?? ''
     $('snippets').value = Object.entries(s.snippets || {}).map(([k, v]) => `${k} = ${v}`).join('\n')
     settingsLoaded = true
   }
@@ -167,8 +181,8 @@ $('saveSettings').onclick = async () => {
   const snippets = {}
   for (const line of $('snippets').value.split('\n')) { const i = line.indexOf('='); if (i > 0) snippets[line.slice(0, i).trim()] = line.slice(i + 1).trim() }
   try {
-    await j('/api/settings', { method: 'PUT', body: JSON.stringify({ myName: $('myName').value, myCompany: $('myCompany').value, defaultEvent: $('defaultEvent').value, timezone: $('timezone').value, dmTiming: $('dmTiming').value, snippets }) })
-    msg('setMsg', 'Saved.', true)
+    await j('/api/settings', { method: 'PUT', body: JSON.stringify({ myName: $('myName').value, myCompany: $('myCompany').value, defaultEvent: $('defaultEvent').value, timezone: $('timezone').value, dmTiming: $('dmTiming').value, groupTitle: $('groupTitle').value || '{me} <> {them}', meetingHour: Number($('meetingHour').value), meetingMinutes: Number($('meetingMinutes').value) || 30, snippets }) })
+    msg('setMsg', 'Saved.', true); load()
   } catch (e) { msg('setMsg', e.message) }
 }
 load().catch(e => document.querySelector('.sub').textContent = e.message)
