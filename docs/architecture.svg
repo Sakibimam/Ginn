@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3CFA44"/>
+    </marker>
+    <marker id="arrDim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7d867d"/>
+    </marker>
+    <linearGradient id="srv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16201a"/>
+      <stop offset="1" stop-color="#101511"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="700" rx="24" fill="#0b0d0b"/>
+
+  <text x="48" y="64" fill="#eef2ee" font-size="28" font-weight="700" letter-spacing="-0.5">How Ginn works</text>
+  <text x="48" y="94" fill="#8b958b" font-size="16">One spoken line on the glasses → follow-ups delivered in the apps where the deal lives. You approve every message.</text>
+
+  <!-- G2 -->
+  <g>
+    <rect x="48" y="140" width="230" height="200" rx="18" fill="#121612" stroke="#2b332b"/>
+    <text x="72" y="174" fill="#eef2ee" font-size="18" font-weight="700">Even G2 + R1 ring</text>
+    <rect x="72" y="192" width="182" height="74" rx="10" fill="#050705" stroke="#1f6e24"/>
+    <text x="84" y="216" fill="#3CFA44" font-size="12" font-family="Menlo, monospace">Alex · Hyperliquid</text>
+    <text x="84" y="236" fill="#3CFA44" font-size="12" font-family="Menlo, monospace">[x] DM  [x] Intro</text>
+    <text x="84" y="256" fill="#3CFA44" font-size="12" font-family="Menlo, monospace">[x] Call · Tue 11:00</text>
+    <text x="72" y="294" fill="#aab4aa" font-size="14">mic · 576×288 lens</text>
+    <text x="72" y="316" fill="#aab4aa" font-size="14">tap = send · double-tap = back</text>
+  </g>
+
+  <!-- Even app -->
+  <g>
+    <rect x="48" y="380" width="230" height="150" rx="18" fill="#121612" stroke="#2b332b"/>
+    <text x="72" y="414" fill="#eef2ee" font-size="18" font-weight="700">Even app (phone)</text>
+    <text x="72" y="442" fill="#aab4aa" font-size="14">Ginn web app in the WebView</text>
+    <text x="72" y="466" fill="#aab4aa" font-size="14">full text, edits, pairing code</text>
+    <text x="72" y="490" fill="#aab4aa" font-size="14">no API keys inside</text>
+  </g>
+  <line x1="163" y1="340" x2="163" y2="376" stroke="#3CFA44" stroke-width="2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <text x="172" y="364" fill="#7d867d" font-size="12">Bluetooth</text>
+
+  <!-- arrow to server -->
+  <line x1="282" y1="420" x2="372" y2="420" stroke="#3CFA44" stroke-width="2.5" marker-end="url(#arr)"/>
+  <text x="290" y="404" fill="#8b958b" font-size="12">16 kHz audio</text>
+  <text x="290" y="442" fill="#8b958b" font-size="12">HTTPS + token</text>
+
+  <!-- server -->
+  <g>
+    <rect x="378" y="140" width="470" height="470" rx="22" fill="url(#srv)" stroke="#2f5d33" stroke-width="1.5"/>
+    <text x="404" y="176" fill="#eef2ee" font-size="20" font-weight="700">Your Ginn server</text>
+    <text x="404" y="200" fill="#8b958b" font-size="14">Node + Hono · runs on your own machine</text>
+
+    <rect x="404" y="222" width="418" height="62" rx="12" fill="#0d120e" stroke="#2b332b"/>
+    <text x="424" y="248" fill="#eef2ee" font-size="16" font-weight="600">1 · Speech to text</text>
+    <text x="424" y="270" fill="#aab4aa" font-size="13">whisper.cpp on the server. ~0.5 s. Audio never leaves your machine.</text>
+
+    <rect x="404" y="296" width="418" height="62" rx="12" fill="#0d120e" stroke="#2b332b"/>
+    <text x="424" y="322" fill="#eef2ee" font-size="16" font-weight="600">2 · Plan the follow-ups</text>
+    <text x="424" y="344" fill="#aab4aa" font-size="13">Claude (structured output) · offline rules parser as fallback</text>
+
+    <rect x="404" y="370" width="418" height="62" rx="12" fill="#0d120e" stroke="#2b332b"/>
+    <text x="424" y="396" fill="#eef2ee" font-size="16" font-weight="600">3 · Match who you met</text>
+    <text x="424" y="418" fill="#aab4aa" font-size="13">plain string similarity on your contacts · no AI</text>
+
+    <rect x="404" y="444" width="418" height="62" rx="12" fill="#0d120e" stroke="#2b332b"/>
+    <text x="424" y="470" fill="#eef2ee" font-size="16" font-weight="600">4 · Approve, send, undo</text>
+    <text x="424" y="492" fill="#aab4aa" font-size="13">one tap · 20 s undo · lock against double sends</text>
+
+    <text x="404" y="536" fill="#3CFA44" font-size="13" font-weight="600">Privacy</text>
+    <text x="404" y="558" fill="#aab4aa" font-size="13">The AI sees only your spoken sentence. Telegram data never goes to an AI.</text>
+    <text x="404" y="580" fill="#aab4aa" font-size="13">Telegram session + Google tokens encrypted at rest (AES-256-GCM).</text>
+  </g>
+
+  <!-- outputs -->
+  <line x1="852" y1="300" x2="928" y2="232" stroke="#3CFA44" stroke-width="2.5" marker-end="url(#arr)"/>
+  <line x1="852" y1="420" x2="928" y2="420" stroke="#3CFA44" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="934" y="140" width="218" height="200" rx="18" fill="#121612" stroke="#2b332b"/>
+    <text x="956" y="174" fill="#eef2ee" font-size="18" font-weight="700">Telegram</text>
+    <text x="956" y="196" fill="#8b958b" font-size="13">your own account (MTProto)</text>
+    <text x="956" y="228" fill="#aab4aa" font-size="14">• DM to Alex, scheduled</text>
+    <text x="956" y="254" fill="#aab4aa" font-size="14">• Group "RocketX &lt;&gt;</text>
+    <text x="968" y="274" fill="#aab4aa" font-size="14">Hyperliquid" + intro</text>
+    <text x="956" y="300" fill="#aab4aa" font-size="14">• Reminders to</text>
+    <text x="968" y="320" fill="#aab4aa" font-size="14">Saved Messages</text>
+  </g>
+
+  <g>
+    <rect x="934" y="372" width="218" height="110" rx="18" fill="#121612" stroke="#2b332b"/>
+    <text x="956" y="406" fill="#eef2ee" font-size="18" font-weight="700">Google Calendar</text>
+    <text x="956" y="434" fill="#aab4aa" font-size="14">• "Call with Alex"</text>
+    <text x="968" y="456" fill="#aab4aa" font-size="14">next Tuesday 11:00</text>
+  </g>
+
+  <g>
+    <rect x="934" y="514" width="218" height="96" rx="18" fill="#121612" stroke="#2b332b" stroke-dasharray="5 5"/>
+    <text x="956" y="548" fill="#8b958b" font-size="16" font-weight="700">Next channels</text>
+    <text x="956" y="574" fill="#7d867d" font-size="14">Gmail · WhatsApp ·</text>
+    <text x="956" y="594" fill="#7d867d" font-size="14">LinkedIn · X</text>
+  </g>
+
+  <!-- Lite -->
+  <g>
+    <rect x="48" y="566" width="230" height="96" rx="18" fill="#121612" stroke="#2b332b" stroke-dasharray="5 5"/>
+    <text x="72" y="598" fill="#eef2ee" font-size="16" font-weight="700">Ginn Lite</text>
+    <text x="72" y="622" fill="#aab4aa" font-size="13">any phone browser, no login</text>
+    <text x="72" y="642" fill="#aab4aa" font-size="13">you press send yourself</text>
+  </g>
+  <path d="M282 614 C 330 614, 340 560, 374 540" fill="none" stroke="#7d867d" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrDim)"/>
+</svg>
