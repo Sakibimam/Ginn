@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "pack": "npm run build && evenhub pack app.json dist",
+    "pack": "npm run build && evenhub pack app.json dist && mv out.ehpk ginn.ehpk",
     "simulate": "evenhub-simulator http://localhost:5173 --automation-port 9898"
   },
   "dependencies": {
