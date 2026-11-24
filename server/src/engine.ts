@@ -54,6 +54,14 @@ function morning(): string {
   return DateTime.now().setZone(tz()).plus({ days: 1 }).set({ hour: 10, minute: 0, second: 0 }).toUTC().toISO()!
 }
 
+/** Use the contact's own spelling in the message ("Sarah" heard, "Sara" in Telegram). */
+function respell(text: string, spoken: string, contactName: string) {
+  const said = spoken.split(/\s+/)[0]
+  const real = contactName.split(/[\s|]+/)[0]
+  if (!said || !real || said.toLowerCase() === real.toLowerCase()) return text
+  return text.replace(new RegExp(`\\b${said.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), real)
+}
+
 // ── drafts ──
 export async function createDraft(transcript: string, source: Draft['source']): Promise<Draft> {
   const s = db.settings
@@ -76,6 +84,7 @@ export async function createDraft(transcript: string, source: Draft['source']): 
       const o = matchContact(a.otherName, null, contacts)
       act.other = o.contact
       act.otherCandidates = o.candidates
+      if (o.contact) act.text = respell(act.text, a.otherName, o.contact.name)
     }
     return act
   })
@@ -93,6 +102,7 @@ export async function createDraft(transcript: string, source: Draft['source']): 
     actions,
     status: m.contact ? 'ready' : 'needs_pick',
   }
+  if (m.contact) for (const a of actions) a.text = respell(a.text, parsed.personName, m.contact.name)
   db.drafts.unshift(draft)
   save()
   return draft
@@ -112,8 +122,10 @@ export async function pick(draftId: string, contactId: string, actionId?: string
   if (actionId) {
     const a = d.actions.find(x => x.id === actionId)
     if (!a) throw new HttpError(404, 'Action not found')
+    if (a.otherName) a.text = respell(a.text, a.otherName, c.name)
     a.other = c
   } else {
+    for (const a of d.actions) if (a.status === 'pending') a.text = respell(a.text, d.person.spokenName, c.name)
     d.contact = c
     if (d.status === 'needs_pick') d.status = 'ready'
   }
@@ -293,10 +305,15 @@ export function nextMeeting() {
     when: whenLabel(hit.a.at),
     contact: hit.d.contact!,
     lastMet: whenLabel(mine[0].createdAt),
-    sent: acts.filter(a => a.status === 'sent' && a.kind === 'dm').map(a => `DM: ${a.text.slice(0, 50)}`).concat(acts.filter(a => a.status === 'sent' && a.kind === 'intro').map(a => `Intro to ${a.other?.name ?? a.otherName}`)),
-    open: acts.filter(a => a.status === 'failed' || a.status === 'pending').map(a => `${a.kind}: ${a.text.slice(0, 50)}`),
+    sent: uniq([
+      ...acts.filter(a => a.status === 'sent' && a.kind === 'dm').map(a => `DM: ${a.text.slice(0, 50)}`),
+      ...acts.filter(a => a.status === 'sent' && a.kind === 'intro').map(a => `Intro to ${a.other?.name ?? a.otherName}`),
+    ]).slice(0, 3),
+    open: uniq(acts.filter(a => a.status === 'failed' || a.status === 'pending').map(a => `${a.kind}: ${a.text.slice(0, 50)}`)).slice(0, 2),
   }
 }
+
+const uniq = (xs: string[]) => [...new Set(xs)]
 
 export class HttpError extends Error {
   constructor(

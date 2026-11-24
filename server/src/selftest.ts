@@ -25,6 +25,7 @@ const cases: { text: string; person: string; company?: string; kinds: string[]; 
   { text: 'Met Daniel Okafor. Introduce him to Sara Kim.', person: 'Daniel Okafor', kinds: ['dm', 'intro'], other: 'Sara Kim' },
   { text: 'Mei Lin from TON. Remind me to check their grant program tomorrow.', person: 'Mei Lin', company: 'TON', kinds: ['dm', 'reminder'] },
   { text: 'Talked to Rahul. Coffee next week.', person: 'Rahul', kinds: ['dm', 'meeting'] },
+  { text: 'Met Jonas at the Polygon party. He asked for our pitch deck. Coffee next Wednesday morning.', person: 'Jonas', kinds: ['dm', 'meeting'] },
 ]
 for (const c of cases) {
   const p = parseWithRules(c.text, s)
@@ -36,6 +37,12 @@ for (const c of cases) {
   const m = p.actions.find(a => a.kind === 'meeting')
   if (m) ok(Boolean(m.when && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(m.when)), `meeting time resolved (${m.when})`, m)
 }
+const party = parseWithRules('Met Jonas at the Polygon party. He asked for our pitch deck. Coffee next Wednesday morning.', s)
+ok(party.company === null && party.event === 'Polygon party', 'party is the event, not the company', party)
+ok(party.actions.find(a => a.kind === 'meeting')?.when?.endsWith('T10:00') === true, 'morning → 10:00', party.actions)
+ok(party.actions[0].text.includes('Polygon party'), 'DM mentions where you met', party.actions[0].text)
+const both = parseWithRules('Met Lucas from Arbitrum at the Daos Hub dinner. Wants the grant intro.', s)
+ok(both.company === 'Arbitrum' && both.event === 'Daos Hub dinner', 'from X at Y event → company + event', both)
 const deck = parseWithRules(cases[0].text, s).actions.find(a => a.kind === 'dm')!
 ok(deck.text.includes('https://example.com/deck'), 'snippet link added to DM', deck.text)
 

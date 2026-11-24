@@ -106,6 +106,22 @@ function splitClauses(t: string): string[] {
     .filter(Boolean)
 }
 
+const EVENT_WORDS = /\b(party|event|conference|summit|dinner|lunch|breakfast|meetup|booth|side ?event|hackathon|week|hub|panel|mixer|happy hour|afterparty|expo|forum)\b/i
+
+/** "at the Polygon party" is where you met; "from Polygon" / "at Polygon" is the company. */
+function splitOrg(raw: string | null): { company: string | null; event: string | null } {
+  if (!raw) return { company: null, event: null }
+  let company: string | null = null
+  let event: string | null = null
+  for (const part of raw.split(/\s+(?=at\s)|\s+at\s+/i)) {
+    const p = part.replace(/^at\s+/i, '').trim()
+    if (!p) continue
+    if (EVENT_WORDS.test(p) || /^the\s/i.test(p)) event ??= p.replace(/^the\s+/i, '')
+    else company ??= p
+  }
+  return { company, event }
+}
+
 function findPerson(clauses: string[]): { name: string; company: string | null; rest: string[] } {
   const c0 = clauses[0] ?? ''
   const pats = [
@@ -129,6 +145,8 @@ function localWhen(text: string, s: Settings, defaultHour = 11): string | null {
   const res = chrono.parse(text, { instant: now.toJSDate(), timezone: now.offset }, { forwardDate: true })[0]
   if (!res) return null
   const c = res.start
+  const part = /\bmorning\b/i.test(text) ? 10 : /\b(lunch|noon)\b/i.test(text) ? 12 : /\bafternoon\b/i.test(text) ? 15 : /\b(evening|tonight|drinks)\b/i.test(text) ? 18 : defaultHour
+  defaultHour = part
   const dt = DateTime.fromObject(
     {
       year: c.get('year') ?? now.year,
@@ -156,9 +174,12 @@ function snippetFor(thing: string, s: Settings): string | null {
 
 export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
   const clauses = splitClauses(transcript)
-  const { name, company, rest } = findPerson(clauses)
+  const found = findPerson(clauses)
+  const { name, rest } = found
+  const org = splitOrg(found.company)
+  const company = org.company
   const who = first(name) || 'there'
-  const event = s.defaultEvent
+  const event = org.event ?? s.defaultEvent
   const actions: ParsedAction[] = []
 
   for (const cl of rest) {
@@ -196,7 +217,7 @@ export function parseWithRules(transcript: string, s: Settings): ParsedDebrief {
   if (!actions.some(a => a.kind === 'dm')) {
     actions.unshift({ kind: 'dm', otherName: null, when: null, text: `Great meeting you at ${event}, ${who}! Let's keep in touch.` })
   }
-  return { personName: name, company, event: null, actions, parser: 'rules' }
+  return { personName: name, company, event: org.event, actions, parser: 'rules' }
 }
 
 export async function parseDebrief(transcript: string, s: Settings): Promise<ParsedDebrief> {
