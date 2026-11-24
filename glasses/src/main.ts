@@ -23,6 +23,7 @@ let pcm: Uint8Array[] = []
 let listenStart = 0
 let ticker: number | null = null
 let busy = false
+let sentAt = 0
 
 const log = (m: string) => {
   state.log.unshift(`${new Date().toLocaleTimeString()}  ${m}`)
@@ -31,7 +32,10 @@ const log = (m: string) => {
 }
 
 function stopTicker() {
-  if (ticker !== null) clearInterval(ticker)
+  if (ticker !== null) {
+    clearInterval(ticker)
+    clearTimeout(ticker)
+  }
   ticker = null
 }
 
@@ -119,6 +123,9 @@ async function finishListening() {
     o += c.length
   }
   pcm = []
+  // Dev only: ?say=... stands in for the mic when testing in the simulator without one.
+  const devSay = new URLSearchParams(location.search).get('say')
+  if (devSay) return typed(devSay)
   if (total < 16000) return message("Didn't hear anything.\nTap and try again, a bit closer.", home)
   await working('Got it. Ginn is on it...')
   try {
@@ -191,29 +198,23 @@ async function send() {
 async function sent() {
   const d = state.draft!
   state.screen = 'sent'
-  const started = Date.now()
-  const draw = () => {
-    const left = UNDO_SECONDS - Math.floor((Date.now() - started) / 1000)
+  sentAt = Date.now()
+  // Timers can be paused when the phone is pocketed, so the undo window is decided by the clock at the moment you tap.
+  const draw = (closing = false) => {
     const lines = d.actions.filter(a => a.status !== 'skipped').map(a => '- ' + doneLine(a, d))
-    return `Done. ${first(who(d))} won't be ghosted.\n${lines.join('\n')}\n\n${left > 0 ? `Tap to undo (${left}s)` : 'Tap to close'}`
+    return `Done. ${first(who(d))} won't be ghosted.\n${lines.join('\n')}\n\n${closing ? 'Tap to close' : `Tap within ${UNDO_SECONDS}s to undo`}`
   }
   await lens.text(draw())
   stopTicker()
-  ticker = window.setInterval(async () => {
-    if (Date.now() - started > UNDO_SECONDS * 1000 + 1500) {
-      stopTicker()
-      try {
-        state.draft = await api.draft(d.id)
-      } catch {
-        /* keep last state */
-      }
-      await lens.text(draw())
-      renderPhone()
-      setTimeout(() => state.screen === 'sent' && home(), 3500)
-      return
+  ticker = window.setTimeout(async () => {
+    try {
+      state.draft = await api.draft(d.id)
+    } catch {
+      /* keep last state */
     }
-    lens.update(draw())
-  }, 1000)
+    if (state.screen === 'sent') await lens.text(draw(true))
+    renderPhone()
+  }, UNDO_SECONDS * 1000 + 1500)
   renderPhone()
 }
 
@@ -262,7 +263,7 @@ async function onTap() {
       return finishListening()
     case 'sent': {
       const d = state.draft!
-      const live = d.actions.some(a => a.status === 'queued')
+      const live = d.actions.some(a => a.status === 'queued') && Date.now() - sentAt < UNDO_SECONDS * 1000
       stopTicker()
       if (!live) return home()
       await working('Undoing...')
