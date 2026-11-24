@@ -38,7 +38,7 @@ export function jw(a: string, b: string): number {
 export function scoreContact(spoken: string, company: string | null, c: Contact): number {
   const sp = norm(spoken).split(' ').filter(Boolean)
   if (!sp.length) return 0
-  const nameTokens = norm(c.name).split(' ').filter(Boolean)
+  const nameTokens = norm(c.name).split(' ').filter(t => t.length >= 3 || sp[0].length < 3)
   const user = c.username ? norm(c.username) : ''
   const tokens = [...nameTokens, ...(user ? [user] : [])]
   // first spoken token vs best contact token
@@ -54,7 +54,8 @@ export function scoreContact(spoken: string, company: string | null, c: Contact)
     const hay = (norm(c.name) + ' ' + user).replace(/ /g, '')
     if (co.length >= 3 && (hay.includes(co) || (co.length >= 4 && hay.includes(co.slice(0, 4))))) s += 0.12
   }
-  return Math.min(1, s)
+  // can exceed 1 with the company bonus, which is what breaks ties between two Alexes
+  return s
 }
 
 export interface MatchResult {
@@ -65,7 +66,7 @@ export interface MatchResult {
 export function matchContact(spoken: string, company: string | null, contacts: Contact[]): MatchResult {
   const ranked = contacts
     .map(contact => ({ contact, score: scoreContact(spoken, company, contact) }))
-    .filter(c => c.score >= 0.7)
+    .filter(c => c.score >= 0.78)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
   const [top, second] = ranked
